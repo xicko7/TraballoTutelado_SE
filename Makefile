@@ -49,3 +49,6 @@ openocd:
 
 debug: $(TARGET).elf
 	/usr/bin/gdb-multiarch -ex "target remote localhost:3333" $(TARGET).elf
+
+reset:
+	sudo openocd -f openocd.cfg -c "init" -c "kinetis mdm mass_erase"

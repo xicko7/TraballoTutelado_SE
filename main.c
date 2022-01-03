@@ -3,6 +3,9 @@
 #include "MMA8451Q.h"
 #include "I2C.h"
 
+#define ACC_CONTROL_VALUE 100
+#define MAX_ANGLE 819
+
 volatile uint32_t button = 0;
 volatile uint8_t Xoffset, Yoffset, Zoffset;
 volatile uint16_t Xout_14_bit, Yout_14_bit, Zout_14_bit;
@@ -14,18 +17,20 @@ uint8_t acc_output[6];
 uint16_t to360(volatile uint16_t value)
 {
 
-  uint16_t res, pot5 = 0, pot6 = 0;
+  // uint16_t res, pot5 = 0, pot6 = 0;
 
-  pot5 = value >> 5; // value/2^5
-  pot6 = value >> 6; // value/2^6
+  // pot5 = value >> 5; // value/2^5
+  // pot6 = value >> 6; // value/2^6
 
-  res = pot5 + pot6;
-  res = res >> 1; // Media
+  // res = pot5 + pot6;
+  // res = res >> 1; // Media
 
-  if (res > 360)
-    res = 360;
+  // if (res > 360)
+  //   res = 360;
 
-  return res;
+  // return res;
+
+  return value >> 3;
 }
 
 /******************************************************************************
@@ -79,8 +84,8 @@ void leds_ini()
   GPIOD->PDDR |= (1 << 5);
   GPIOE->PDDR |= (1 << 29);
   // both LEDS off after init
-  GPIOD->PSOR = (1 << 5);
-  GPIOE->PSOR = (1 << 29);
+  GPIOD->PSOR |= (1 << 5);
+  GPIOE->PSOR |= (1 << 29);
 }
 
 void led_green_toggle()
@@ -91,6 +96,22 @@ void led_green_toggle()
 void led_red_toggle(void)
 {
   GPIOE->PTOR = (1 << 29);
+}
+
+void led_green(uint8_t x)
+{
+  if (x > 0)
+    GPIOD->PSOR |= (1 << 5);
+  else
+    GPIOD->PSOR &= ~(1 << 5);
+}
+
+void led_red(uint8_t x)
+{
+  if (x > 0)
+    GPIOE->PSOR |= (1 << 29);
+  else
+    GPIOE->PSOR &= ~(1 << 29);
 }
 
 /******************************************************************************
@@ -144,17 +165,48 @@ void Accelerometer_Init(void)
   I2C_WriteRegister(MMA845x_I2C_ADDRESS, CTRL_REG1, 0x3D);        // ODR = 1.56Hz, Reduced noise, Active mode
 }
 
+uint16_t acc_control(uint16_t tmp, uint16_t ant)
+{
+
+  if (tmp > ant)
+  {
+    if (tmp - ant > ACC_CONTROL_VALUE)
+      return tmp;
+    else
+      return ant;
+  }
+  else
+  {
+    if (ant - tmp > ACC_CONTROL_VALUE)
+      return tmp;
+    else
+      return ant;
+  }
+}
+
 void acc_read(void)
 {
+
+  /**
+   * Control de sensibilidade para que o valor do ángulo non se actualice se non varía demasiado
+   * coa finalidade de evitar refrescos no LCD cando o acelerómetro está en repouso
+   *
+   */
 
   // while (!(I2C_ReadRegister(MMA845x_I2C_ADDRESS, STATUS_REG) & 0x08))
   //   ; // Wait for a first set of data
 
+  volatile uint16_t tmpx, tmpy, tmpz;
+
   I2C_ReadMultiRegisters(MMA845x_I2C_ADDRESS, OUT_X_MSB_REG, 6, acc_output); // Read data output registers 0x01-0x06
 
-  Xout_14_bit = ((short)(acc_output[0] << 8 | acc_output[1])) >> 2; // Compute 14-bit X-axis output value
-  Yout_14_bit = ((short)(acc_output[2] << 8 | acc_output[3])) >> 2; // Compute 14-bit Y-axis output value
-  Zout_14_bit = ((short)(acc_output[4] << 8 | acc_output[5])) >> 2; // Compute 14-bit Z-axis output value
+  tmpx = ((short)(acc_output[0] << 8 | acc_output[1])) >> 2; // Compute 14-bit X-axis output value
+  tmpy = ((short)(acc_output[2] << 8 | acc_output[3])) >> 2; // Compute 14-bit Y-axis output value
+  tmpz = ((short)(acc_output[4] << 8 | acc_output[5])) >> 2; // Compute 14-bit Z-axis output value
+
+  Xout_14_bit = acc_control(tmpx, Xout_14_bit);
+  Yout_14_bit = acc_control(tmpy, Yout_14_bit);
+  Zout_14_bit = acc_control(tmpz, Zout_14_bit);
 
   Xoffset = Xout_14_bit / 8 * (-1);                    // Compute X-axis offset correction value
   Yoffset = Yout_14_bit / 8 * (-1);                    // Compute Y-axis offset correction value
@@ -192,10 +244,8 @@ void PORTC_PORTD_IRQHandler(void)
   {
     PORTC->PCR[5] |= PORT_PCR_ISF_MASK; // Clear the interrupt flag
     acc_read();
-
   }
 }
-
 
 int main(void)
 {
@@ -210,12 +260,33 @@ int main(void)
   uint8_t display_control = 1;
   while (1)
   {
-    if (button == 1){
+    if (button == 1)
+    {
+
       display_control += 1;
 
       if (display_control > 3)
         display_control = 1;
-      
+
+      switch (display_control)
+      {
+      case 1: // X LCD (ningún led)
+        led_red_toggle();
+        break;
+
+      case 2: // Y LCD (led verde)
+        led_green_toggle();
+        break;
+
+      case 3: // Z LCD (led vermello)
+        led_red_toggle();
+        led_green_toggle();
+        break;
+
+      default:
+        break;
+      }
+
       button = 0;
     }
 
@@ -225,7 +296,6 @@ int main(void)
       lcd_display_dec(to360(Yout_14_bit));
     if (display_control == 3)
       lcd_display_dec(to360(Zout_14_bit));
-    
 
     millis(500);
   }
