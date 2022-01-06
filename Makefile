@@ -52,3 +52,6 @@ debug: $(TARGET).elf
 
 reset:
 	sudo openocd -f openocd.cfg -c "init" -c "kinetis mdm mass_erase"
+
+run:
+	make all && make flash && make openocd && make debug

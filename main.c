@@ -7,7 +7,7 @@
 #define MAX_ANGLE 819
 
 volatile uint32_t button = 0;
-volatile uint8_t Xoffset, Yoffset, Zoffset;
+volatile uint8_t Xoffset, Yoffset, Zoffset, sleeping = 0;
 volatile uint16_t Xout_14_bit, Yout_14_bit, Zout_14_bit;
 uint8_t acc_output[6];
 
@@ -222,40 +222,17 @@ void acc_read(void)
   I2C_WriteRegister(MMA845x_I2C_ADDRESS, CTRL_REG1, 0x3D); // ODR = 1.56Hz, Reduced noise, Active mode
 }
 
-/******************************************************************************
- * RUTINAS INTERRUPCIÓN
- ******************************************************************************/
-void PORTC_PORTD_IRQHandler(void)
-{
-  /* Interrupt on SW1 detected */
-  if (PORTC->PCR[3] & PORT_PCR_ISF_MASK)
-  {
-    // Para evitar que se execute constantemente a interrupción.
-    PORTC->PCR[3] |= PORT_PCR_ISF_MASK;
-    button = 1;
-  }
-  else if (PORTC->PCR[12] & PORT_PCR_ISF_MASK) /* Interrupt on SW3 detected */
-  {
-    // Para evitar que se execute constantemente a interrupción.
-    PORTC->PCR[12] |= PORT_PCR_ISF_MASK;
-    button = 2;
-  }
-  else /* Accelerometer interrupt */
-  {
-    PORTC->PCR[5] |= PORT_PCR_ISF_MASK; // Clear the interrupt flag
-    acc_read();
-  }
-}
-
 int main(void)
 {
+  sleeping = 0;
   irclk_ini();
   lcd_ini();
   leds_ini();
   buttons_ini();
   MCU_Init();
   Accelerometer_Init();
-  // Calibrate();
+  led_green_toggle();
+  led_red_toggle();
 
   uint8_t display_control = 1;
   while (1)
@@ -270,7 +247,7 @@ int main(void)
 
       switch (display_control)
       {
-      case 1: // X LCD (ningún led)
+      case 1: // X LCD (dous leds)
         led_red_toggle();
         break;
 
@@ -301,4 +278,37 @@ int main(void)
   }
 
   return 0;
+}
+
+/******************************************************************************
+ * RUTINAS INTERRUPCIÓN
+ ******************************************************************************/
+
+void PORTC_PORTD_IRQHandler(void)
+{
+  /* Interrupt on SW1 detected */
+  if (PORTC->PCR[3] & PORT_PCR_ISF_MASK)
+  {
+    // Para evitar que se execute constantemente a interrupción.
+    PORTC->PCR[3] |= PORT_PCR_ISF_MASK;
+    button = 1;
+  }
+  else if (PORTC->PCR[12] & PORT_PCR_ISF_MASK) /* Interrupt on SW3 detected */
+  {
+    // Para evitar que se execute constantemente a interrupción.
+    PORTC->PCR[12] |= PORT_PCR_ISF_MASK;
+    button = 2;
+    if (!sleeping)
+    {
+      GPIOD->PSOR |= (1 << 5);
+      GPIOE->PSOR |= (1 << 29);
+      asm("wfi");
+    }
+    sleeping = !sleeping;
+  }
+  else /* Accelerometer interrupt */
+  {
+    PORTC->PCR[5] |= PORT_PCR_ISF_MASK; // Clear the interrupt flag
+    acc_read();
+  }
 }
