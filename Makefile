@@ -2,11 +2,11 @@
 #PREFIX=$(TOOLCHAIN)/arm-none-eabi-
 PREFIX=arm-none-eabi-
 
-ARCHFLAGS=-mthumb -mcpu=cortex-m0plus
+ARCHFLAGS=-mthumb -mcpu=cortex-m0plus 
 COMMONFLAGS=-g3 -O3 -Wall -Werror $(ARCHFLAGS)
 
-CFLAGS=-I./includes $(COMMONFLAGS)
-LDFLAGS=$(COMMONFLAGS) --specs=nano.specs -Wl,--gc-sections,-Map,$(TARGET).map,-Tlink.ld
+CFLAGS=-I./includes $(COMMONFLAGS) -D CPU_MKL46Z128VLL4
+LDFLAGS=$(COMMONFLAGS) --specs=nano.specs --specs=nosys.specs -Wl,--gc-sections,-Map,$(TARGET).map,-Tlink.ld
 LDLIBS=
 
 CC=$(PREFIX)gcc
