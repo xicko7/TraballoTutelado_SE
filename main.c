@@ -6,7 +6,7 @@
 #define ACC_CONTROL_VALUE 100
 #define MAX_ANGLE 819
 
-volatile uint32_t button = 0;
+volatile uint32_t button = 0, step = 0;
 volatile uint8_t Xoffset, Yoffset, Zoffset, sleeping = 0;
 volatile uint16_t Xout_14_bit, Yout_14_bit, Zout_14_bit;
 uint8_t acc_output[6];
@@ -127,14 +127,6 @@ void MCU_Init(void)
   I2C0->F = 0x14;                     // SDA hold time = 2.125us, SCL start hold time = 4.25us, SCL stop hold time = 5.125us *
   I2C0->C1 = I2C_C1_IICEN_MASK;       // Enable I2C0 module
 
-  // Configure the PTA14 pin (connected to the INT1 of the MMA8451Q) for falling edge interrupts
-  /*
-  SIM_SCGC5 |= SIM_SCGC5_PORTA_MASK;		// Turn on clock to Port A module
-  PORTA->PCR14 |= (0|PORT->PCR_ISF_MASK|	// Clear the interrupt flag
-            PORT->PCR_MUX(0x1)|	// PTA14 is configured as GPIO
-            PORT->PCR_IRQC(0xA));	// PTA14 is configured for falling edge interrupts
-     */
-
   // Configure the PTC5 pin (connected to the INT1 of the MMA8451Q) for falling edge interrupts
   SIM->SCGC5 |= SIM_SCGC5_PORTC_MASK;       // Turn on clock to Port C module
   PORTC->PCR[5] |= (0 | PORT_PCR_ISF_MASK | // Clear the interrupt flag
@@ -193,9 +185,6 @@ void acc_read(void)
    *
    */
 
-  // while (!(I2C_ReadRegister(MMA845x_I2C_ADDRESS, STATUS_REG) & 0x08))
-  //   ; // Wait for a first set of data
-
   volatile uint16_t tmpx, tmpy, tmpz;
 
   I2C_ReadMultiRegisters(MMA845x_I2C_ADDRESS, OUT_X_MSB_REG, 6, acc_output); // Read data output registers 0x01-0x06
@@ -248,11 +237,11 @@ int main(void)
       switch (display_control)
       {
       case 1: // X LCD (dous leds)
-        led_red_toggle();
+        led_green_toggle();
         break;
 
       case 2: // Y LCD (led verde)
-        led_green_toggle();
+        led_red_toggle();
         break;
 
       case 3: // Z LCD (led vermello)
@@ -267,14 +256,17 @@ int main(void)
       button = 0;
     }
 
-    if (display_control == 1)
-      lcd_display_dec(to360(Xout_14_bit));
-    if (display_control == 2)
-      lcd_display_dec(to360(Yout_14_bit));
-    if (display_control == 3)
-      lcd_display_dec(to360(Zout_14_bit));
+    if (!step) // Evitar valores dispares entre lecturas pares e impares
+    {
+      if (display_control == 1)
+        lcd_display_dec(to360(Xout_14_bit));
+      if (display_control == 2)
+        lcd_display_dec(to360(Yout_14_bit));
+      if (display_control == 3)
+        lcd_display_dec(to360(Zout_14_bit));
+    }
 
-    millis(500);
+    millis(100);
   }
 
   return 0;
@@ -310,5 +302,6 @@ void PORTC_PORTD_IRQHandler(void)
   {
     PORTC->PCR[5] |= PORT_PCR_ISF_MASK; // Clear the interrupt flag
     acc_read();
+    step = step == 0;
   }
 }
